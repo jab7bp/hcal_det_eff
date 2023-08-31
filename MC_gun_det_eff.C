@@ -22,6 +22,47 @@ using namespace std::chrono;
 #include "/w/halla-scshelf2102/sbs/jboyd/include/beam_variables.h"
 #include "/w/halla-scshelf2102/sbs/jboyd/include/calc_functions.h"
 
+double par_n[5], par_p[5];
+double par_n_error[5], par_p_error[5];
+double det_eff_err_p = 0.0;
+double det_eff_err_n = 0.0;
+
+double calc_pol_error( double *par_err, int polN){
+
+	vector<double> vec_errors(polN, 0.0);
+	for(int i = 0; i < polN; i++ ){
+		vec_errors[i] = par_err[i];
+	}
+
+	double error;
+	double temp_error = 0.0;
+
+	for( int elem = 0; elem < vec_errors.size(); elem++ ){
+		temp_error += pow( vec_errors[elem], 2 );
+	}
+
+	error = sqrt( temp_error );
+	return error;
+}
+
+Double_t fit_det_eff( Double_t *x, Double_t *par){
+	double det_eff_fit = 0.0;
+
+	det_eff_fit = par[0] + (par[1]/(pow( par[2], x[0])));
+
+	return det_eff_fit;
+}
+
+Double_t calc_det_eff(double p_central, double *par ){
+
+	double det_eff = 0.0;
+
+	det_eff = par[0] + par[1]*p_central + par[2]*pow( p_central, 2 ) + par[3]*pow( p_central, 3 ) + par[4]*pow( p_central, 4 );
+
+	return det_eff;
+
+}
+
 int kine = 4;
 int sbsfieldscale = 0;
 
@@ -37,8 +78,33 @@ const int HCal_bins = 220;
 const double HCal_min = 0.0;
 const double HCal_max = 2.2;
 
-double histo_max = HCal_max;
+const double det_eff_yaxis_min = 80.0;
+const double n_xaxis_min = 1.4;
+const double p_xaxis_min = 1.3;
 
+double p_central_sbs4 = 2.35;
+double p_central_sbs7 = 6.20;
+double p_central_sbs8 = 3.22;
+double p_central_sbs9 = 3.21;
+double p_central_sbs14 = 4.84;
+double p_central_kine = 0.0;
+
+double p_sbs4_neut_min, p_sbs4_neut_max;
+double p_sbs7_neut_min, p_sbs7_neut_max;
+double p_sbs8_neut_min, p_sbs8_neut_max;
+double p_sbs9_neut_min, p_sbs9_neut_max;
+double p_sbs14_neut_min, p_sbs14_neut_max;
+
+double p_sbs4_prot_min, p_sbs4_prot_max;
+double p_sbs7_prot_min, p_sbs7_prot_max;
+double p_sbs8_prot_min, p_sbs8_prot_max;
+double p_sbs9_prot_min, p_sbs9_prot_max;
+double p_sbs14_prot_min, p_sbs14_prot_max;
+
+vector<double> p_sbs4_neut, p_sbs4_prot, p_sbs7_neut, p_sbs7_prot, p_sbs8_neut, p_sbs8_prot;
+vector<double> p_sbs9_neut, p_sbs9_prot, p_sbs14_neut, p_sbs14_prot;
+
+double histo_max = HCal_max;
 
 //Select Nucleon to calculate from
 //"neutron", "proton", "both"
@@ -64,6 +130,11 @@ TH1D *h_n_det_eff, *h_p_det_eff;
 TH2D *h2_xy_p, *h2_xy_exp_p, *h2_HCal_pN_p, *h2_HCal_pN_cut_p;
 TH2D *h2_xy_n, *h2_xy_exp_n, *h2_HCal_pN_n, *h2_HCal_pN_cut_n;
 
+TF1 *tf_det_eff_n, *tf_det_eff_p;
+
+TAxis *tax_h_det_eff_n, *tax_h_det_eff_p;
+TPaveText *tpt_det_eff_fits, *tpt_det_eff_bins;
+
 TProfile *tprof_h2_HCalE_pN_n, *tprof_h2_HCalE_pN_p;
 
 auto gr_det_eff_n = new TGraph();
@@ -75,15 +146,12 @@ TF1 *tf_gaus_n, *tf_gaus_p;
 double n_efficiency = 0.0;
 double p_efficiency = 0.0;
 
-double p_central_sbs4 = 2.35;
-double p_central_sbs7 = 6.20;
-double p_central_sbs8 = 3.22;
-double p_central_sbs9 = 3.21;
-double p_central_sbs14 = 4.84;
-
 //Efficiency calculations:
 double prot_det_eff_sbs4 = 0.0, prot_det_eff_sbs7 = 0.0, prot_det_eff_sbs8 = 0.0, prot_det_eff_sbs9 = 0.0, prot_det_eff_sbs14 = 0.0;
 double neut_det_eff_sbs4 = 0.0, neut_det_eff_sbs7 = 0.0, neut_det_eff_sbs8 = 0.0, neut_det_eff_sbs9 = 0.0, neut_det_eff_sbs14 = 0.0;
+
+double prot_bin_det_eff_sbs4 = 0.0, prot_bin_det_eff_sbs7 = 0.0, prot_bin_det_eff_sbs8 = 0.0, prot_bin_det_eff_sbs9 = 0.0, prot_bin_det_eff_sbs14 = 0.0;
+double neut_bin_det_eff_sbs4 = 0.0, neut_bin_det_eff_sbs7 = 0.0, neut_bin_det_eff_sbs8 = 0.0, neut_bin_det_eff_sbs9 = 0.0, neut_bin_det_eff_sbs14 = 0.0;
 
 //TBranch variables
 //HCal
@@ -125,6 +193,16 @@ void MC_gun_det_eff(){
 	cout << "Kinematic: SBS" << kine << endl;
 	cout << "SBS Field Scale: " << sbsfieldscale << endl;
 
+	switch( kine ){
+		case 4: p_central_kine = 2.35; break;
+		case 7: p_central_kine = 6.20; break;
+		case 8: p_central_kine = 3.22; break;
+		case 9: p_central_kine = 3.21; break;
+		case 14: p_central_kine = 4.84; break;
+		default: 
+			p_central_kine = 0.0;
+	}
+
 	rootfile_dir = "/lustre19/expphy/volatile/halla/sbs/jboyd/simulation/out_dir/MC_REPLAY_OUT_DIR";
 
 	if( Nucleon_Select == "proton" || Nucleon_Select == "both"){
@@ -152,7 +230,7 @@ void MC_gun_det_eff(){
 		h_dy_p = new TH1D("h_dy_p", Form("Proton dy - SBS%i;y_{HCal}-y_{expect} (m)", kine), 400, 3.8, 7.8);		
 		h_HCalE_p = new TH1D("h_HCalE_p", Form("Proton HCal Cluster Energy - SBS%i; HCal Cluster Energy (GeV)", kine), HCal_bins, HCal_min, HCal_max);
 
-		h_det_eff_p = new TH1D("h_det_eff_p", Form("Proton Detection Efficiency - SBS%i; Proton Momentum (GeV/c); Efficiency (%%)", kine), 80, 1, 9);
+		h_det_eff_p = new TH1D("h_det_eff_p", Form("Proton Detection Efficiency - SBS%i; Nucleon Momentum (GeV/c); Efficiency (%%)", kine), 80, 1, 9);
 
 		h2_xy_p = new TH2D("h2_xy_p", Form("Proton xy - SBS%i", kine), 12, -0.92837, 0.92837, 24, -2.35183, 1.45182);
 		h2_xy_exp_p = new TH2D("h2_xy_exp_p", Form("Proton Expected xy - SBS%i", kine), 12, -0.92837, 0.92837, 24, -2.35183, 1.45182);
@@ -175,7 +253,7 @@ void MC_gun_det_eff(){
 		h2_HCal_pN_n = new TH2D("h2_HCal_pN_n", Form("Neutron Momentum - SBS%i; Momentum (GeV/c); HCal Cluster Energy (GeV)", kine), 80, 1, 9, HCal_bins, HCal_min, HCal_max);
 		h2_HCal_pN_cut_n = new TH2D("h2_HCal_pN_cut_n", Form("Neutron momentum with threshold = HCal E_{mean} / (4.0 each bin) - SBS%i; Proton Momentum (GeV/c); HCal Cluster Energy (GeV)", kine), 80, 1, 9, HCal_bins, HCal_min, HCal_max);
 
-		tprof_h2_HCalE_pN_n = new TProfile("tprof_h2_HCalE_pN_n", Form("Neutron Momentum Energy Profile - SBS%i; Neutron Momentum (GeV/c); HCal Cluster Energy (GeV)", kine), pN_bins, pN_min, pN_max, HCal_min, HCal_max);
+		tprof_h2_HCalE_pN_n = new TProfile("tprof_h2_HCalE_pN_n", Form("Neutron Momentum Energy Profile - SBS%i; Nucleon Momentum (GeV/c); HCal Cluster Energy (GeV)", kine), pN_bins, pN_min, pN_max, HCal_min, HCal_max);
 
 	}
 
@@ -611,7 +689,25 @@ void MC_gun_det_eff(){
 
 					h2_HCal_pN_cut_n->SetBinContent(bin, bin_y, 1);
 				}
+
+				if( mc_p > ( floor(p_central_sbs4*10.0)/10.0 ) && mc_p < ( ceil(p_central_sbs4*10.0)/10.0 ) ){
+					p_sbs4_neut.push_back(mc_p);
+				}
+				if( mc_p > ( floor(p_central_sbs7*10.0)/10.0 ) && mc_p < ( ceil(p_central_sbs7*10.0)/10.0 ) ){
+					p_sbs7_neut.push_back(mc_p);
+				}
+				if( mc_p > ( floor(p_central_sbs8*10.0)/10.0 ) && mc_p < ( ceil(p_central_sbs8*10.0)/10.0 ) ){
+					p_sbs8_neut.push_back(mc_p);
+				}
+				if( mc_p > ( floor(p_central_sbs9*10.0)/10.0 ) && mc_p < ( ceil(p_central_sbs9*10.0)/10.0 ) ){
+					p_sbs9_neut.push_back(mc_p);
+				}
+				if( mc_p > ( floor(p_central_sbs14*10.0)/10.0 ) && mc_p < ( ceil(p_central_sbs14*10.0)/10.0 ) ){
+					p_sbs14_neut.push_back(mc_p);
+				}
+
 			}
+
 			if( nucl_type == "proton" ){
 				
 				if( int(mc_fnucl) == 0 ){  
@@ -632,9 +728,55 @@ void MC_gun_det_eff(){
 
 					h2_HCal_pN_cut_p->SetBinContent(bin, bin_y, 1);
 				}
+
+				if( mc_p > ( floor(p_central_sbs4*10.0)/10.0 ) && mc_p < ( ceil(p_central_sbs4*10.0)/10.0 ) ){
+					p_sbs4_prot.push_back(mc_p);
+				}
+				if( mc_p > ( floor(p_central_sbs7*10.0)/10.0 ) && mc_p < ( ceil(p_central_sbs7*10.0)/10.0 ) ){
+					p_sbs7_prot.push_back(mc_p);
+				}
+				if( mc_p > ( floor(p_central_sbs8*10.0)/10.0 ) && mc_p < ( ceil(p_central_sbs8*10.0)/10.0 ) ){
+					p_sbs8_prot.push_back(mc_p);
+				}
+				if( mc_p > ( floor(p_central_sbs9*10.0)/10.0 ) && mc_p < ( ceil(p_central_sbs9*10.0)/10.0 ) ){
+					p_sbs9_prot.push_back(mc_p);
+				}
+				if( mc_p > ( floor(p_central_sbs14*10.0)/10.0 ) && mc_p < ( ceil(p_central_sbs14*10.0)/10.0 ) ){
+					p_sbs14_prot.push_back(mc_p);
+				}					
 			}
 
 		}
+
+		// p_sbs4_neut_min = *min_element(p_sbs4_neut.begin(), p_sbs4_neut.end());
+		// p_sbs4_neut_max = *max_element(p_sbs4_neut.begin(), p_sbs4_neut.end());
+
+		// p_sbs4_prot_min = *min_element(p_sbs4_prot.begin(), p_sbs4_prot.end());
+		// p_sbs4_prot_max = *max_element(p_sbs4_prot.begin(), p_sbs4_prot.end());
+
+		// p_sbs7_neut_min = *min_element(p_sbs7_neut.begin(), p_sbs7_neut.end());
+		// p_sbs7_neut_max = *max_element(p_sbs7_neut.begin(), p_sbs7_neut.end());
+
+		// p_sbs7_prot_min = *min_element(p_sbs7_prot.begin(), p_sbs7_prot.end());
+		// p_sbs7_prot_max = *max_element(p_sbs7_prot.begin(), p_sbs7_prot.end());
+
+		// p_sbs8_neut_min = *min_element(p_sbs8_neut.begin(), p_sbs8_neut.end());
+		// p_sbs8_neut_max = *max_element(p_sbs8_neut.begin(), p_sbs8_neut.end());
+
+		// p_sbs8_prot_min = *min_element(p_sbs8_prot.begin(), p_sbs8_prot.end());
+		// p_sbs8_prot_max = *max_element(p_sbs8_prot.begin(), p_sbs8_prot.end());
+
+		// p_sbs9_neut_min = *min_element(p_sbs9_neut.begin(), p_sbs9_neut.end());
+		// p_sbs9_neut_max = *max_element(p_sbs9_neut.begin(), p_sbs9_neut.end());
+
+		// p_sbs9_prot_min = *min_element(p_sbs9_prot.begin(), p_sbs9_prot.end());
+		// p_sbs9_prot_max = *max_element(p_sbs9_prot.begin(), p_sbs9_prot.end());				
+
+		// p_sbs14_neut_min = *min_element(p_sbs14_neut.begin(), p_sbs14_neut.end());
+		// p_sbs14_neut_max = *max_element(p_sbs14_neut.begin(), p_sbs14_neut.end());
+
+		// p_sbs14_prot_min = *min_element(p_sbs14_prot.begin(), p_sbs14_prot.end());
+		// p_sbs14_prot_max = *max_element(p_sbs14_prot.begin(), p_sbs14_prot.end());
 
 		cout << "------------------------------------------------" << endl;
 		cout << "------------------------------------------------" << endl;
@@ -660,19 +802,45 @@ void MC_gun_det_eff(){
 				gr_n_y[n_bin] = n_efficiency;
 
 			}
+
 			TCanvas *c_det_eff_n = new TCanvas("c_det_eff_n", "c_det_eff_n", 1200, 500);
-			h_det_eff_n->GetYaxis()->SetRangeUser(80.0, 100.0);
+			h_det_eff_n->GetYaxis()->SetRangeUser(det_eff_yaxis_min, 100.0);
 			h_det_eff_n->Draw("same");
 
 			TCanvas *c_gr_det_eff_n = new TCanvas("c_gr_det_eff_n", "c_gr_det_eff_n", 1200, 500);
 			gr_det_eff_n = new TGraph(pN_bins, gr_n_x, gr_n_y);
-			gr_det_eff_n->GetYaxis()->SetRangeUser(85, 100);
-			gr_det_eff_n->GetXaxis()->SetRangeUser(1.0, 9.0);
-			gr_det_eff_n->SetMarkerColor(8);
+			gr_det_eff_n->GetYaxis()->SetRangeUser(det_eff_yaxis_min, 100);
+			gr_det_eff_n->GetXaxis()->SetRangeUser(1.2, 9.0);
+			gr_det_eff_n->SetMarkerColor(4);
 			gr_det_eff_n->Draw("AP0*");
+
+			tf_det_eff_n = new TF1("tf_det_eff_n", "pol4", 1.2 , 9.0);
+			// tf_det_eff_n->SetParLimits(1, -1000, -0.0001);
+			// tf_det_eff_n->SetParLimits(2, 0.0001, 1000);
+			tf_det_eff_n->SetLineColor(4);
+			tf_det_eff_n->SetLineStyle(5);
+			gr_det_eff_n->Fit("tf_det_eff_n", "RMSEF+");
+
+			tf_det_eff_n->GetParameters( par_n );
+
+			par_n_error[0] = tf_det_eff_n->GetParError(0);
+			par_n_error[1] = tf_det_eff_n->GetParError(1);
+			par_n_error[2] = tf_det_eff_n->GetParError(2);
+			par_n_error[3] = tf_det_eff_n->GetParError(3);
+			par_n_error[4] = tf_det_eff_n->GetParError(4);
+
+			det_eff_err_n = calc_pol_error(par_n_error, 4);
+
+			neut_det_eff_sbs4 = calc_det_eff( p_central_sbs4, par_n );
+			neut_det_eff_sbs7 = calc_det_eff( p_central_sbs7, par_n );
+			neut_det_eff_sbs8 = calc_det_eff( p_central_sbs8, par_n );
+			neut_det_eff_sbs9 = calc_det_eff( p_central_sbs9, par_n );
+			neut_det_eff_sbs14 = calc_det_eff( p_central_sbs14, par_n );
+
+
 		}
 
-		if( nucl_type == "proton" ){
+		if( nucl_type == "proton"){
 
 			double gr_p_x[pN_bins];
 			double gr_p_y[pN_bins];
@@ -688,36 +856,209 @@ void MC_gun_det_eff(){
 				h_det_eff_p->SetBinContent(p_bin, p_efficiency);
 								
 				double x_val = ((p_max - p_min)/pN_bins)*p_bin + p_min;
-				cout << "x val: " << x_val << endl;
+				// cout << "x val: " << x_val << endl;
 				gr_p_x[p_bin] = x_val;
 				gr_p_y[p_bin] = p_efficiency;
+
 			}
 
 			TCanvas *c_det_eff_p = new TCanvas("c_det_eff_p", "c_det_eff_p", 1200, 500);
-			h_det_eff_p->GetYaxis()->SetRangeUser(80.0, 100.0);
+			h_det_eff_p->GetYaxis()->SetRangeUser(det_eff_yaxis_min, 100.0);
 			h_det_eff_p->Draw("same");
 
 			TCanvas *c_gr_det_ef_p = new TCanvas("c_gr_det_eff_p", "c_gr_det_eff_p", 1200, 500);
 			gr_det_eff_p = new TGraph(pN_bins, gr_p_x, gr_p_y);
-			gr_det_eff_p->GetYaxis()->SetRangeUser(85, 100);
-			gr_det_eff_p->GetXaxis()->SetRangeUser(1.0, 9.0);
-			gr_det_eff_p->SetMarkerColor(53);
+			gr_det_eff_p->GetYaxis()->SetRangeUser(det_eff_yaxis_min, 100);
+			gr_det_eff_p->GetXaxis()->SetRangeUser(1.2, 9.0);
+			gr_det_eff_p->SetMarkerColor(3);
 			gr_det_eff_p->Draw("AP0*");
+
+			tf_det_eff_p = new TF1("tf_det_eff_p", "pol4", 1.1, 9.0);
+			// tf_det_eff_p->SetParLimits(1, -1000, -0.0001);
+			// tf_det_eff_p->SetParLimits(2, 0.0001, 1000);
+			tf_det_eff_p->SetLineStyle(5);
+			tf_det_eff_p->SetLineColor(3);
+			gr_det_eff_p->Fit("tf_det_eff_p", "RMSEF+");
+
+			tf_det_eff_p->GetParameters( par_p );
+
+			par_p_error[0] = tf_det_eff_p->GetParError(0);
+			par_p_error[1] = tf_det_eff_p->GetParError(1);
+			par_p_error[2] = tf_det_eff_p->GetParError(2);
+			par_p_error[3] = tf_det_eff_p->GetParError(3);
+			par_p_error[4] = tf_det_eff_p->GetParError(4);
+
+			det_eff_err_p = calc_pol_error(par_p_error, 4);
+
+			prot_det_eff_sbs4 = calc_det_eff( p_central_sbs4, par_p );
+			prot_det_eff_sbs7 = calc_det_eff( p_central_sbs7, par_p );
+			prot_det_eff_sbs8 = calc_det_eff( p_central_sbs8, par_p );
+			prot_det_eff_sbs9 = calc_det_eff( p_central_sbs9, par_p );
+			prot_det_eff_sbs14 = calc_det_eff( p_central_sbs14, par_p );
+
+
+
 		}
 
-		if( Nucleon_Select == "both" ){
+		if( Nucleon_Select != "proton" && Nucleon_Select != "neutron" && Nucleon_Select == "both" ){
 			TCanvas *c_det_eff_np = new TCanvas("c_det_eff_np", "c_det_eff_np", 1200, 500);
 
 			h_det_eff_n->SetMarkerStyle(20);
 			h_det_eff_n->SetMarkerSize(0.5);
-			h_det_eff_n->SetMarkerColor(3);
+			h_det_eff_n->SetMarkerColor(4);
 
 			h_det_eff_p->SetMarkerStyle(21);
 			h_det_eff_p->SetMarkerSize(0.5);
-			h_det_eff_p->SetMarkerColor(51);
+			h_det_eff_p->SetMarkerColor(3);
+
+			h_det_eff_p->SetStats(false);
+			h_det_eff_n->SetStats(false);
 
 			h_det_eff_n->Draw("P0");
+			tf_det_eff_n->Draw("same");
+
 			h_det_eff_p->Draw("same+P0");
+			if( nucl_type == "proton" ){
+				tf_det_eff_p->Draw("same");
+			}
+			
+
+			TLegend *tleg_pn_det_eff = new TLegend(0.12, 0.79, 0.22, 0.89);
+			tleg_pn_det_eff->AddEntry(h_det_eff_p, "Proton");
+			tleg_pn_det_eff->AddEntry(h_det_eff_n, "Neutron");
+			tleg_pn_det_eff->Draw("SAME");
+
+			TLine *tl_sbs4 = new TLine(2.35, det_eff_yaxis_min, 2.35, 100);
+			tl_sbs4->SetLineStyle(3);
+			tl_sbs4->Draw("SAME");
+
+			TLine *tl_sbs7 = new TLine(6.20, det_eff_yaxis_min, 6.20, 100);
+			tl_sbs7->SetLineStyle(3);
+			tl_sbs7->Draw("SAME");
+
+			TLine *tl_sbs8 = new TLine(3.22, det_eff_yaxis_min, 3.22, 100);
+			tl_sbs8->SetLineStyle(3);
+			tl_sbs8->Draw("SAME");
+
+			TLine *tl_sbs9 = new TLine(3.21, det_eff_yaxis_min, 3.21, 100);
+			tl_sbs9->SetLineStyle(3);
+			tl_sbs9->Draw("SAME");
+
+			TLine *tl_sbs14 = new TLine(4.84, det_eff_yaxis_min, 4.84, 100);
+			tl_sbs14->SetLineStyle(3);
+			tl_sbs14->Draw("SAME");
+
+		//EFFICIENCIES FROM THE BIN VALUES
+
+			tax_h_det_eff_n = h_det_eff_n->GetXaxis();
+			tax_h_det_eff_p = h_det_eff_p->GetXaxis();
+
+			prot_bin_det_eff_sbs4 = h_det_eff_p->GetBinContent(tax_h_det_eff_p->FindBin(p_central_sbs4));
+			prot_bin_det_eff_sbs7 = h_det_eff_p->GetBinContent(tax_h_det_eff_p->FindBin(p_central_sbs7));
+			prot_bin_det_eff_sbs8 = h_det_eff_p->GetBinContent(tax_h_det_eff_p->FindBin(p_central_sbs8));
+			prot_bin_det_eff_sbs9 = h_det_eff_p->GetBinContent(tax_h_det_eff_p->FindBin(p_central_sbs9));
+			prot_bin_det_eff_sbs14 = h_det_eff_p->GetBinContent(tax_h_det_eff_p->FindBin(p_central_sbs14));
+
+			neut_bin_det_eff_sbs4 = h_det_eff_n->GetBinContent(tax_h_det_eff_n->FindBin(p_central_sbs4));
+			neut_bin_det_eff_sbs7 = h_det_eff_n->GetBinContent(tax_h_det_eff_n->FindBin(p_central_sbs7));
+			neut_bin_det_eff_sbs8 = h_det_eff_n->GetBinContent(tax_h_det_eff_n->FindBin(p_central_sbs8));
+			neut_bin_det_eff_sbs9 = h_det_eff_n->GetBinContent(tax_h_det_eff_n->FindBin(p_central_sbs9));
+			neut_bin_det_eff_sbs14 = h_det_eff_n->GetBinContent(tax_h_det_eff_n->FindBin(p_central_sbs14));
+		//------------------------------------		
+
+		//Labels for efficiency values	
+
+			tpt_det_eff_bins = new TPaveText(6.4, 82, 7.475, 92.5);
+			tpt_det_eff_bins->SetFillColor(kCyan);
+			tpt_det_eff_bins->SetBorderSize(1);
+
+			tpt_det_eff_bins->AddText("Efficiencies from p Bin");
+			tpt_det_eff_bins->AddText("");
+			tpt_det_eff_bins->AddText("SBS4:");
+			tpt_det_eff_bins->AddText(Form("p: %0.1f%%, n: %0.1f%%", prot_bin_det_eff_sbs4, neut_bin_det_eff_sbs4));
+			tpt_det_eff_bins->AddText("");
+
+			tpt_det_eff_bins->AddText("SBS7:");
+			tpt_det_eff_bins->AddText(Form("p: %0.1f%%, n: %0.1f%%", prot_bin_det_eff_sbs7, neut_bin_det_eff_sbs7));
+			tpt_det_eff_bins->AddText("");
+
+			tpt_det_eff_bins->AddText("SBS8:");
+			tpt_det_eff_bins->AddText(Form("p: %0.1f%%, n: %0.1f%%", prot_bin_det_eff_sbs8, neut_bin_det_eff_sbs8));
+			tpt_det_eff_bins->AddText("");
+
+			tpt_det_eff_bins->AddText("SBS9:");
+			tpt_det_eff_bins->AddText(Form("p: %0.1f%%, n: %0.1f%%", prot_bin_det_eff_sbs9, neut_bin_det_eff_sbs9));
+			tpt_det_eff_bins->AddText("");
+
+			tpt_det_eff_bins->AddText("SBS14:");
+			tpt_det_eff_bins->AddText(Form("p: %0.1f%%, n: %0.1f%%", prot_bin_det_eff_sbs14, neut_bin_det_eff_sbs14));
+
+			tpt_det_eff_bins->Draw("same");
+
+		//-----------------------------------
+ 
+			tpt_det_eff_fits = new TPaveText(7.525, 82, 8.6, 92.5);
+			tpt_det_eff_fits->SetFillColor(kAzure+10);
+			tpt_det_eff_fits->SetBorderSize(1);
+
+			tpt_det_eff_fits->AddText("Efficiencies from Fit");
+			tpt_det_eff_fits->AddText("");
+			tpt_det_eff_fits->AddText("SBS4:");
+			tpt_det_eff_fits->AddText(Form("p: %0.1f%%, n: %0.1f%%", prot_det_eff_sbs4, neut_det_eff_sbs4));
+			tpt_det_eff_fits->AddText("");
+
+			tpt_det_eff_fits->AddText("SBS7:");
+			tpt_det_eff_fits->AddText(Form("p: %0.1f%%, n: %0.1f%%", prot_det_eff_sbs7, neut_det_eff_sbs7));
+			tpt_det_eff_fits->AddText("");
+
+			tpt_det_eff_fits->AddText("SBS8:");
+			tpt_det_eff_fits->AddText(Form("p: %0.1f%%, n: %0.1f%%", prot_det_eff_sbs8, neut_det_eff_sbs8));
+			tpt_det_eff_fits->AddText("");
+
+			tpt_det_eff_fits->AddText("SBS9:");
+			tpt_det_eff_fits->AddText(Form("p: %0.1f%%, n: %0.1f%%", prot_det_eff_sbs9, neut_det_eff_sbs9));
+			tpt_det_eff_fits->AddText("");
+
+			tpt_det_eff_fits->AddText("SBS14:");
+			tpt_det_eff_fits->AddText(Form("p: %0.1f%%, n: %0.1f%%", prot_det_eff_sbs14, neut_det_eff_sbs14));
+
+			tpt_det_eff_fits->Draw("same");
+
+
+			TText *txt_sbs4 = new TText(p_central_sbs4 - 0.001, 82.5, "SBS4");
+			txt_sbs4->SetTextAngle(90);
+			txt_sbs4->SetTextSize(0.035f);
+			txt_sbs4->Draw("same");
+
+			TText *txt_sbs7 = new TText(p_central_sbs7 - 0.001, 82.5, "SBS7");
+			txt_sbs7->SetTextAngle(90);
+			txt_sbs7->SetTextSize(0.035f);
+			txt_sbs7->Draw("same");
+
+			TText *txt_sbs8 = new TText(p_central_sbs8 - 0.05, 82.5, "SBS8");
+			txt_sbs8->SetTextAngle(90);
+			txt_sbs8->SetTextSize(0.035f);
+			txt_sbs8->Draw("same");
+
+			TText *txt_sbs9 = new TText(p_central_sbs9 + 0.15, 82.5, "SBS9");
+			txt_sbs9->SetTextAngle(90);
+			txt_sbs9->SetTextSize(0.035f);
+			txt_sbs9->Draw("same");
+
+			TText *txt_sbs14 = new TText(p_central_sbs14 - 0.001, 82.5, "SBS14");
+			txt_sbs14->SetTextAngle(90);
+			txt_sbs14->SetTextSize(0.035f);
+			txt_sbs14->Draw("same");
+
+
+			TPad *tpad_det_eff = new TPad("tpad_det_eff", "Pad to hold the title for MC Det. Eff.", 0.04, 0.92, 0.96, 1.0);
+			tpad_det_eff->Draw();
+			tpad_det_eff->cd();
+
+			TText *ttxt_det_eff_title = new TText(0.3, 0.04, "MC HCal Detection Efficiencies");
+			ttxt_det_eff_title->SetTextSize(0.8f);
+			ttxt_det_eff_title->Draw();
+			
 		}
 
 		cout << "Writing to outfile...." << endl;
@@ -734,6 +1075,7 @@ void MC_gun_det_eff(){
 //END of NUCLEONS loop
 	}
 
+	
 	cout << "-------------------------------------------" << endl;
 	cout << "                Analysis Finished     " << endl;
 	cout << "Total Entries: " << nEvents << endl;
