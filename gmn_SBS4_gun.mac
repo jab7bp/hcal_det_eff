@@ -1,0 +1,60 @@
+## Configure G4SBS for gmn (Q^2 = 3 GeV^2)
+/g4sbs/filename        /lustre19/expphy/volatile/halla/sbs/jboyd/simulation/out_dir/jb_gmn_SBS4_LD2_mag0_100uA_pGun_Px_10k_TEST_07-17_job0.root    ## Output rootfile
+
+## Configure Experiment
+/g4sbs/exp             gmn
+
+## Configure the target
+/g4sbs/target          LD2
+/g4sbs/targlen         15.0 cm           ## Target Length
+
+## Configure generator settings
+/g4sbs/kine            gun           ## Generator
+/g4sbs/particle	       proton
+/g4sbs/gunpol	       1 0 0
+/g4sbs/runtime         1.0 s
+/g4sbs/beamcur         1.0 muA
+/g4sbs/beamE           3.7283 GeV
+/g4sbs/thmin           30.8 deg
+/g4sbs/thmax           33.0 deg
+/g4sbs/phmin           166 deg
+/g4sbs/phmax           188 deg
+/g4sbs/eemin	       1 GeV
+/g4sbs/eemax	       9 GeV
+
+## Configure standard detector settings
+/g4sbs/hcaldist        11.0 m
+/g4sbs/hcalvoffset     0.45 m
+/g4sbs/beamlineconfig  4                 ## set relevant beamline configuration
+/g4sbs/sbsclampopt     3                 ## Front field clamp only
+
+## Configure the magnets
+/g4sbs/bbfield         1      ##Boolean BB On/Off
+#/g4sbs/scalebbfield    1.0776
+/g4sbs/scalebbfield    0.9672 
+#/g4sbs/tosfield        GMN13_field_newheader.table
+#/g4sbs/sbsmagfield     0.97 tesla
+#/g4sbs/tosfield  	BigBitePortableFieldMap.table 1
+#/g4sbs/tosfield 	SBSPortableFieldMap_FrontClampOnly_NoPoleShims.table 2
+
+##SBS field scale: 100% = 1.23 tesla, 70% = 0.861, 50% = 0.615, 30% = 0.369
+##Trying to get a true 50% field. 0.615 is a bit weak so using extrapolation:
+## 30% -> dx = -0.483864, 50%-> dx = -0.8, Wanting dx to be -1.05
+## for -1.05 -> mag% = 65.816 -> 0.80954 T
+## Needs a bump for a better 50%-> 68% --> 0.8364T
+## Lets try 70% for 50%!! .78*1.23 = 0.9585
+##75*1.25 = 0.9225
+/g4sbs/sbsmagfield     0.0 tesla
+/g4sbs/48d48field      0       ##Boolean On/Off
+/g4sbs/bbang           36.0 deg
+/g4sbs/bbdist          1.7988 m
+/g4sbs/sbsang          31.9 deg
+/g4sbs/48D48dist       2.25 m 
+
+
+/g4sbs/keepsdtrackinfo 	all true
+/g4sbs/totalabs true
+
+## Run 100 events
+/g4sbs/eventstatusevery 1000
+/g4sbs/run             10000
