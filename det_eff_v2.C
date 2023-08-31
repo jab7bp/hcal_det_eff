@@ -9,7 +9,7 @@
 #include <TF1.h>
 #include "TStopwatch.h"
 
-using namespace std::chrono;
+// using namespace std::chrono;
 #include "/w/halla-scshelf2102/sbs/jboyd/include/include_files.h"
 #include "/w/halla-scshelf2102/sbs/jboyd/include/GEM_lookups.h"
 #include "/w/halla-scshelf2102/sbs/jboyd/include/beam_variables.h"
@@ -38,17 +38,18 @@ bool fit_only;
 //2) Use tree kinematic variables (e.kine.**)
 //3) Use reconstructed variable functions
 
-int calc_method = 3; //1 isn't good
+int calc_method = 0; //1 isn't good
 
 bool fit_with_expo = false;
 
 int polN = 4;
 int interpolN = 99;
 int dypolN, dxpolN;
-bool use_parsed = false;
+bool use_parsed = true;
 
-double dy_sig_multiplier = 6.0;
-double W2_sig_multiplier = 6.0;
+double dx_sig_multiplier = 2.75; //SBS4: 3.5
+double dy_sig_multiplier = 2.5; //SBD4: 2.5
+double W2_sig_multiplier = 4.0;
 
 double dx_bin_factor = 200.0;
 double dxdy_min_y = -2.5; //this is the dx range
@@ -72,7 +73,7 @@ double W2_fullScale_min_x = 0.0;
 double W2_fullScale_max_x = 3;
 int W2_fullScale_nbins = int(W2_bin_factor*(W2_fullScale_max_x - W2_fullScale_min_x));
 double W2_min_x = 0.0;
-double W2_max_x = 1.4;
+double W2_max_x = 1.5; //SBS4 1.4, SBS8, 1.2
 int W2_nbins = int(W2_bin_factor*(W2_max_x - W2_min_x));
 
 double reject_min;
@@ -93,8 +94,13 @@ bool acceptance_match = true;
 //Choices are: "coin_time", "theta_pq", "dxdy"
 TString hcal_cluster_minimize = "dxdy";
 
-bool use_best_cluster = true;
-bool theta_pq_cut = true;
+TString hcal_cluster_PID = "proton";
+bool use_hcal_cluster_PID = false;
+int hcal_cluster_PID_particle = 0; //0: None, 1: Proton, 2: Neutron;
+bool PID_clus_match_bool = false;
+
+bool use_best_cluster = false;
+bool theta_pq_cut = false;
 
 bool plot_dxdy = true;
 bool plot_dxdy_anticut = true;
@@ -142,6 +148,7 @@ double p_Nucleon_mean, p_proton_mean, p_neutron_mean;
 
 //Errors for fits and propagation
 double W2_bgSub_fullFit_integral_error, W2_gaus_integral_error, W2_bgSub_pol8_integral_error, W2_sig_from_sub_integral, W2_sig_from_sub_integral_error;
+double W2_sig_from_sub_par0, W2_sig_from_sub_par1, W2_sig_from_sub_par2;
 double W2_sig_from_sub_par0err, W2_sig_from_sub_par1err, W2_sig_from_sub_par2err, W2_sig_from_sub_IntegralError;
 double dx_fullFit_integral_error, dx_pol_integral_error, dx_gaus_integral_error, dx_bgSub_gaus_integral_error;
 double W2_addsub_error, W2_multdiv_error, W2_total_error;
@@ -164,7 +171,7 @@ TString experiment = "gmn";
 
 int pass;
 double W2_yield, W2_yield_reject;
-double dx_scale = dy_sig_multiplier;
+double dx_scale = dx_sig_multiplier;
 double dy_scale = dy_sig_multiplier;
 double W2_scale = W2_sig_multiplier;
 double dx_min, dx_max, dy_min, dy_max, W2_min, W2_max;
@@ -172,11 +179,11 @@ bool global_cut_fail = false;
 bool hit_on_HCal = false;
 
 double x_min_W2 = 0.0;
-double x_max_W2 = 1.4;
+double x_max_W2 = W2_max_x;
 int nBins_W2 = int((x_max_W2 - x_min_W2)*W2_bin_factor);
 
 double W2_fit_min = 0.0;
-double W2_fit_max = 1.4;
+double W2_fit_max = W2_max_x;
 int nBins_fit_W2 = int((W2_fit_max - W2_fit_min)*W2_bin_factor);
 
 //Experimental Lookup Parameters
@@ -303,7 +310,7 @@ Long64_t nTCevents, Nevents;
 TH1D *hin_bb_gem_Ntracks, *h_W2_full_rand;
 TH1D *h_atime, *h_W, *h_W2, *h_W2copy, *h_W2interpol, *h_W2recon, *h_KE_p, *h_KE_low, *h_Diff, *h_X, *h_Y, *h_E_eloss, *h_hcal_clusblk_ADC_time;
 TH1D *h_Wfull, *h_W2full, *h_W2_residual;
-TH1D *h_W_cut, *h_W_fcut, *h_vz_cut, *h_theta_pq_p, *h_theta_pq_n, *h_theta_pq_p_pNhat, *h_theta_pq_n_pNhat;
+TH1D *h_W_cut, *h_W_fcut, *h_vz_cut, *h_theta_pq_p, *h_theta_pq_n, *h_theta_pq_p_pNhat, *h_theta_pq_n_pNhat, *h_hcal_e;
 TH1D *h_Q2, *h_E_ep, *h_E_pp, *h_Ep, *h_p_Nucleon, *h_p_proton, *h_p_neutron;
 TH1D *h_dy, *h_dy_cut, *h_dy_wcut, *h_dx, *h_dx_cut, *h_dx_wcut, *h_dx_fcut, *h_dx_wcut_fcut, *h_dy_wcut_fcut;
 TH1D *h_dx_w2cut, *h_dx_w2cut_fcut;
@@ -335,14 +342,23 @@ int min_max_iter_cnt;
 int hcal_missed_cnt = 0;
 int hcal_hit_cnt = 0;
 
+double defficiency;
+
 void det_eff_v2(){
 
-	auto total_time_start = high_resolution_clock::now();
+	auto total_time_start = chrono::high_resolution_clock::now();
 	TStopwatch *StopWatch = new TStopwatch();
 
 	gStyle->SetPalette(55);
 	cout << "--------------------------------------" << endl;
 	cout << "Analysis started. " << endl;
+	cout << "--------------------------------------" << endl;
+	if( use_parsed == true ){
+		cout << "----------Using Parsed Rootfiles----------" << endl;
+	}
+	if( use_parsed == false){
+		cout << "----------Using NON-Parsed Rootfiles----------" << endl;
+	}
 	cout << "--------------------------------------" << endl;
 
 	cout << "Run parameters: " << endl;
@@ -351,9 +367,9 @@ void det_eff_v2(){
 	cout << "Beam Energy: " << E_beam << endl;
 	cout << "SBS Field: " << sbsfieldscale << "%" << endl;
 	cout << "-----------------------------------" << endl;
-	cout << "BB angle [deg]: " << (180/pi)*BB_theta << endl;
+	cout << "BB angle [deg]: " << lookup_BB_angle_by_kine(kine, "deg") << endl;
 	cout << "SBS angle: " << lookup_SBS_angle_by_kine(kine, "deg") << endl;
-	cout << "HCal angle [deg]: " << (180/pi)*lookup_HCal_angle_by_kine(kine, "deg") << endl;
+	cout << "HCal angle [deg]: " << lookup_HCal_angle_by_kine(kine, "deg") << endl;
 	cout << "HCal distance: " << HCal_dist << endl;
 	cout << "-----------------------------------" << endl << endl;
 
@@ -362,6 +378,13 @@ void det_eff_v2(){
 	}
 	if( run_target == "LD2" ){
 		Nucleon_mass = 0.5*(Mp + Mn);
+	}
+
+	if( use_hcal_cluster_PID && hcal_cluster_PID == "proton" ){
+		hcal_cluster_PID_particle = 1; 
+	}
+	else if( use_hcal_cluster_PID && hcal_cluster_PID == "neutron" ){
+		hcal_cluster_PID_particle = 2; 
 	}
 
 	if( polN == 99 ){ //99 is exponential
@@ -409,16 +432,19 @@ void det_eff_v2(){
 
 		W_mean = 8.81088e-01;
 		W_sigma = 9.95799e-02;
-		W2_mean = 7.28445e-01;
-		W2_sigma = 1.16788e-01;
+		// W2_mean = 7.28445e-01;
+		// W2_sigma = 1.16788e-01;
+		
+		W2_mean = 0.72903487;
+		W2_sigma = 0.12343966;
 
 		//offset: -1.37521e-01
 		dx_min = -6.98838e-02 - (dx_scale)*7.28711e-02;
 		dx_max = -6.98838e-02 + (dx_scale)*7.28711e-02;
-		dx_p = -6.98838e-02;
-		dx_p_sigma = 7.28711e-02;
+		dx_p = -0.050000000;
+		dx_p_sigma = 0.080900537;
 		dx_n = dx_p;
-		dx_n_sigma = dx_n_sigma;
+		dx_n_sigma = dx_p_sigma;
 
 		dy_min = -0.0374881 - (dy_scale)*0.056;
 		dy_min = -0.0374881 + (dy_scale)*0.056;
@@ -510,10 +536,14 @@ void det_eff_v2(){
 
 		if( use_parsed ){
 			cout << endl << "-------- Parsed run mode --------" << endl;
-			rootfile_dir = "/lustre19/expphy/volatile/halla/sbs/jboyd/analysis_rootfiles/jboyd_parsed";
+			// rootfile_dir = "/lustre19/expphy/volatile/halla/sbs/jboyd/analysis_rootfiles/jboyd_parsed";
+			rootfile_dir = Form("/volatile/halla/sbs/jboyd/analysis_rootfiles/jboyd_parsed/SBS%i/%s/mag%i", kine, run_target.Data(), sbsfieldscale);
 			infile_name = Form("gmn_parsed_%s_SBS%i_mag%i_binFactor.root", run_target.Data(), kine, sbsfieldscale);
-			cout << endl << "Adding files to TChain..." << endl;
-			TC->Add(Form("%s/%s", rootfile_dir.Data(), infile_name.Data()));
+			cout << endl << "Adding files to TChain from..." << endl << endl;
+			cout << rootfile_dir.Data() << endl << endl;
+			cout << "                ------- " << endl;
+			// TC->Add(Form("%s/%s", rootfile_dir.Data(), infile_name.Data()));
+			TC->Add(Form("%s/*", rootfile_dir.Data()));
 			cout << "Finished adding to TChain. " << endl;
 		}
 
@@ -806,6 +836,7 @@ void det_eff_v2(){
 		h_theta_pq_n_pNhat = new TH1D("h_theta_pq_n_pNhat", Form("Theta pq for neutron (pNhat) - SBS%i %i, %s; theta_pq_n (rad);", kine, sbsfieldscale, run_target.Data()), 120, 0.0, 0.6);
 		h_theta_pq_p_pNhat = new TH1D("h_theta_pq_p_pNhat", Form("Theta pq for proton (pNhat) - SBS%i %i, %s; theta_pq_p (rad);", kine, sbsfieldscale, run_target.Data()), 120, 0.0, 0.6);
 
+		h_hcal_e = new TH1D("h_hcal_e", Form("HCal cluster energy - SBS%i %i, %s; theta_pq_n (rad);", kine, sbsfieldscale, run_target.Data()), 120, 0.0, 0.6);
 
 		cout << "--------------------------------------" << endl;
 		cout << "Number of events to analyze: " << Nevents << endl;
@@ -924,6 +955,8 @@ void det_eff_v2(){
 			nucleon_phi = e_prime_phi + pi; //assume coplanarity	
 
 			p_center = E_beam_final/(1.0 + (E_beam_final/Nucleon_mass)*( 1.0 - cos(e_prime_theta)));
+
+			h_hcal_e->Fill(hcal_e);
 
 			if( calc_method == 0 ){
 				theta_pq_p_thresh = 0.0175;
@@ -1079,6 +1112,7 @@ void det_eff_v2(){
 
 			Double_t clus_sel_theta_pq;
 
+
 			for( Int_t clus_sel = 0; clus_sel < hcal_clus_id; clus_sel++){
 				Double_t clus_sel_dx = hcal_clus_x[clus_sel] - x_expected_HCal;
 				Double_t clus_sel_dy = hcal_clus_y[clus_sel] - y_expected_HCal;
@@ -1092,19 +1126,42 @@ void det_eff_v2(){
 
 
 			// Best cluster particle ID
+
+				if( use_hcal_cluster_PID ){
+					PID_clus_match_bool = false;
+				}
+				if( !use_hcal_cluster_PID ){
+					PID_clus_match_bool = true;
+				}
+
 				Int_t clus_sel_PID; //0 is NEITHER, 1 is PROTON, 2 is NEUTRON
 
-				bool clus_sel_PID_p = (abs(clus_sel_dx - dx_p)<(3.0*dx_p_sigma)) && (abs(clus_sel_dy - dy_p )<3*dy_p_sigma);
-				bool clus_sel_PID_n = (abs(clus_sel_dx - dx_n)<(3.0*dx_n_sigma)) && (abs(clus_sel_dy - dy_p )<3*dy_p_sigma);
+				bool clus_sel_PID_p = (abs(clus_sel_dx - dx_p)<(dx_sig_multiplier*dx_p_sigma)) && (abs(clus_sel_dy - dy_p )<dx_sig_multiplier*dy_p_sigma);
+				bool clus_sel_PID_n = (abs(clus_sel_dx - dx_n)<(dx_sig_multiplier*dx_n_sigma)) && (abs(clus_sel_dy - dy_p )<dx_sig_multiplier*dy_p_sigma);
 
 				if( clus_sel_PID_p && !clus_sel_PID_n){
 					clus_sel_PID = 1;
+
+					if( use_hcal_cluster_PID && hcal_cluster_PID == "proton" ){
+						hcal_cluster_PID_particle = 1;
+						PID_clus_match_bool = true;
+					}
 				}
 				else if( clus_sel_PID_n && !clus_sel_PID_p){
 					clus_sel_PID = 2;
+
+					if( use_hcal_cluster_PID && hcal_cluster_PID == "neutron" ){
+						hcal_cluster_PID_particle = 2;
+						PID_clus_match_bool = true;
+					}
 				}
 				else if( clus_sel_PID_p && clus_sel_PID_n){
 					clus_sel_PID = 0;
+
+					if( use_hcal_cluster_PID && ( hcal_cluster_PID == "proton" || hcal_cluster_PID == "neutron" ) ){
+						hcal_cluster_PID_particle = 0;
+						PID_clus_match_bool = false;
+					}
 				}
 				else{
 					clus_sel_PID = -1;
@@ -1136,7 +1193,7 @@ void det_eff_v2(){
 
 		//Now we can apply this and use it to select "best clusters" to use:
 
-			if( hcal_cluster_minimize == "coin_time" ){
+			if( hcal_cluster_minimize == "coin_time" || ( PID_clus_match_bool ) ){
 				dx_bestcluster = hcal_clus_x[clus_sel_dx_atime] - x_expected_HCal;
 				dy_bestcluster = hcal_clus_y[clus_sel_dx_atime] - y_expected_HCal;
 				HCal_ADC_time_bestcluster = hcal_clus_atime[clus_sel_dx_atime];				
@@ -1206,19 +1263,36 @@ void det_eff_v2(){
 			h_Wfull->Fill( W );
 
 	//For detection efficiency we should have some general cuts on 
+			int bbcal_min_nhits = 3;
+
 			if( false ){
-				if( hit_on_HCal && (nclus>0) && (PS_nclus>0) && (SH_nclus>0) && (abs(bb_tr_vz[0])<=0.075) && (bb_nhits[0]>4) && (bb_tr_n==1) && (bb_ps_e>0.15) && (hcal_e>0.025) ){
+				if( hit_on_HCal && (nclus>0) && (PS_nclus>0) && (SH_nclus>0) && (abs(bb_tr_vz[0])<=0.075) && (bb_nhits[0]>bbcal_min_nhits) && (bb_tr_n==1) && (bb_ps_e>0.15) && (hcal_e>0.025) ){
 					h_W2->Fill( W2 );	
 				}				
 			}
 			// bb_tgt_th[0]>-0.2 && 
-			bool det_eff_cut =  
+			bool det_eff_cut;
+
+			if( kine == 4 ){
+				det_eff_cut =  	bb_tgt_th[0]>-0.2 && 
 								hit_on_HCal && 
 								SH_nclus>0 && 
 								PS_nclus>0 && (abs(bb_tr_vz[0])<=0.075) 
-								&& (bb_ps_e>0.15) 
+								&& (bb_ps_e>0.150) 
+								&& (bb_nhits[0]>4) 
+								&& (bb_tr_n==1);				
+			}
+
+			if( kine == 8 ){
+
+				det_eff_cut =  	
+								hit_on_HCal && 
+								SH_nclus>0 && 
+								PS_nclus>0 && (abs(bb_tr_vz[0])<=0.075) 
+								&& (bb_ps_e>0.180) 
 								&& (bb_nhits[0]>4) 
 								&& (bb_tr_n==1);
+			}
 			
 			if( det_eff_cut ){
 				h_W2->Fill( W2 );	
@@ -1295,7 +1369,7 @@ void det_eff_v2(){
 				// } 
 
 				// Preliminary HCal projections with single cut on W
-				if( fabs(W - W_mean) < 4*W_sigma ){
+				if( fabs(W - W_mean) < W2_sig_multiplier*W_sigma ){
 				// if( ( W > (W_mean - 0.75*W_sigma) ) && ( W < (W_mean + 0.75*W_sigma) ) ){
 				// if( W2 < 1.05 && W2 > 0.85){
 					h_dx_wcut->Fill( dx );
@@ -1303,7 +1377,7 @@ void det_eff_v2(){
 					h_dxdy_wcut->Fill( dy, dx );
 					h_W_cut->Fill( W );
 				}
-				if( fabs(W2 - W2_mean) < 4*W2_sigma ){
+				if( fabs(W2 - W2_mean) < W2_sig_multiplier*W2_sigma ){
 					h_dx_w2cut->Fill( dx );
 				}
 				//Populate position histograms with cuts
@@ -1525,7 +1599,7 @@ void det_eff_v2(){
 			h_W2_in->Fit("tf1_W2_bg_reject", "RMSE0+");
 			tf1_W2_bg_reject->GetParameters(W2_bg_reject_par);
 
-			tf1_W2_bg_pol4 = new TF1("tf1_W2_bg_pol4", "pol4", 0.0, 1.4);
+			tf1_W2_bg_pol4 = new TF1("tf1_W2_bg_pol4", "pol4", 0.0, W2_max_x);
 			tf1_W2_bg_pol4->SetNpx(W2_nbins);
 			tf1_W2_bg_pol4->SetLineColor(9);
 			tf1_W2_bg_pol4->SetParameters(W2_bg_reject_par);
@@ -1620,7 +1694,7 @@ void det_eff_v2(){
 			h_W2_sig_from_sub->SetLineColor(6);
 			h_W2_sig_from_sub->Draw("same");
 
-			tf1_W2_gaus = new TF1("tf1_W2_gaus", "gaus", 0.0, 1.4);
+			tf1_W2_gaus = new TF1("tf1_W2_gaus", "gaus", 0.0, W2_max_x);
 			tf1_W2_gaus->SetNpx(W2_nbins);
 			tf1_W2_gaus->SetLineColor(6);
 			tf1_W2_gaus->SetLineStyle(6);
@@ -1628,7 +1702,7 @@ void det_eff_v2(){
 			tf1_W2_gaus->FixParameter(1, par[1]);
 			tf1_W2_gaus->FixParameter(2, par[2]);
 
-			W2_gaus_integral = tf1_W2_gaus->Integral(0.0, 1.4)/tf1_W2_gaus->GetHistogram()->GetBinWidth(1);
+			W2_gaus_integral = tf1_W2_gaus->Integral(0.0, W2_max_x)/tf1_W2_gaus->GetHistogram()->GetBinWidth(1);
 			W2_gaus_integral_error = tf1_W2_gaus->IntegralError(W2_gaus_min_x, W2_gaus_max_x)/tf1_W2_gaus->GetHistogram()->GetBinWidth(1);
 
 			tf1_W2_gaus_err = new TF1("tf1_W2_gaus_err", "gaus", W2_gaus_min_x, W2_gaus_max_x);
@@ -1638,12 +1712,21 @@ void det_eff_v2(){
 			tf1_W2_gaus_err->SetParLimits(2, 0.999*par[2], 1.001*par[2]);
 			h_W2_sig_from_sub->Fit("tf1_W2_gaus_err", "RMSE0");
 
+			W2_sig_from_sub_par0 = tf1_W2_gaus_err->GetParameter(0);
+			W2_sig_from_sub_par1 = tf1_W2_gaus_err->GetParameter(1);
+			W2_sig_from_sub_par2 = tf1_W2_gaus_err->GetParameter(2);
+
 			W2_sig_from_sub_par0err = tf1_W2_gaus_err->GetParError(0);
 			W2_sig_from_sub_par1err = tf1_W2_gaus_err->GetParError(1);
 			W2_sig_from_sub_par2err = tf1_W2_gaus_err->GetParError(2);
 			W2_sig_from_sub_integral_error = tf1_W2_gaus_err->IntegralError(W2_gaus_min_x, W2_gaus_max_x)/tf1_W2_gaus_err->GetHistogram()->GetBinWidth(1);
 
 			W2_sig_from_sub_integral = h_W2_sig_from_sub->Integral();
+
+			if( W2_gaus_integral_error == 0.0 ){
+				W2_gaus_integral_error = calc_gaus_error(W2_sig_from_sub_par0, W2_sig_from_sub_par0err, W2_sig_from_sub_par2, W2_sig_from_sub_par2err, h_W2_sig_from_sub->GetBinWidth(1) );
+				W2_sig_from_sub_integral_error = W2_gaus_integral_error;
+			}
 
 			TLegend *tl_W2_bg_sub = new TLegend(0.15, 0.7, 0.45, 0.85);
 			tl_W2_bg_sub->AddEntry(tf1_W2_fullFit, "Total W2 fit");
@@ -1652,7 +1735,7 @@ void det_eff_v2(){
 			tl_W2_bg_sub->Draw("Same");
 
 			TPaveText *tp_W2_bg_sub = new TPaveText(0.15, 0.60, 0.45, 0.69, "NDCbr");
-			tp_W2_bg_sub->AddText(Form("W2 count = %i +/- %i", int(W2_gaus_integral), int(W2_gaus_integral_error) ));
+			tp_W2_bg_sub->AddText(Form("W2 count = %i +/- %i", int(W2_sig_from_sub_integral), int(W2_sig_from_sub_integral_error) ));
 			tp_W2_bg_sub->AddText(Form("Total fit #chi^{2} = %.1f", tf1_W2_fullFit->GetChisquare() ));
 			tp_W2_bg_sub->Draw("same");
 
@@ -1689,7 +1772,7 @@ void det_eff_v2(){
 				tf1_dy_fullFit->SetParName(6, "dy BG pol3 p3");		
 			}
 
-			tf1_dy_fullFit->SetParLimits(0, 0.5*h_dy_in->GetMaximum(), h_dy_in->GetMaximum());
+			tf1_dy_fullFit->SetParLimits(0, 0.5*h_dy_in->GetMaximum(), 0.93*h_dy_in->GetMaximum());
 			tf1_dy_fullFit->SetParLimits(1, -0.05, 0.05);
 			tf1_dy_fullFit->SetParLimits(2, 0.0, 0.20);
 
@@ -1793,13 +1876,23 @@ void det_eff_v2(){
 			tf1_dx_fullFit->SetParName(4, Form("dx BG pol%i p1", dxpolN));
 			tf1_dx_fullFit->SetParName(5, Form("dx BG pol%i p2", dxpolN));
 
+			if( dxpolN == 2 ){
+				tf1_dx_fullFit->SetParLimits(5, -10000.0, 0.0);
+			}
+
 			if( dxpolN == 3){
 				tf1_dx_fullFit->SetParName(6, Form("dx BG pol%i p3", dxpolN));
 			}
 
-			tf1_dx_fullFit->SetParLimits(0, 0.5*h_dx_in->GetMaximum(), h_dx_in->GetMaximum());
+			tf1_dx_fullFit->SetParLimits(0, 0.5*h_dx_in->GetMaximum(), 0.95*h_dx_in->GetMaximum());
 			tf1_dx_fullFit->SetParLimits(1, -0.5, 0.5);
-			tf1_dx_fullFit->SetParLimits(2, 0.0, 0.15);
+
+			if( kine == 4 ){
+				tf1_dx_fullFit->SetParLimits(2, 0.0, 0.15);				
+			}
+			if( kine == 8 ){
+				tf1_dx_fullFit->SetParLimits(2, 0.0, 0.085);
+			}
 			
 			h_dx_in->Fit("tf1_dx_fullFit", "RMSE+");
 			tf1_dx_fullFit->GetParameters(dx_fullFit_par);
@@ -1823,10 +1916,10 @@ void det_eff_v2(){
 			dx_gaus_sigma = dx_fullFit_par[2];
 
 			if( dxpolN == 2 ){
-				tf1_dx_pol = new TF1("tf1_dx_pol", fitPol2, dx_min_x, dx_max_x, 3);			
+				tf1_dx_pol = new TF1("tf1_dx_pol", fitPol2, dx_min_x, dx_max_x, 3);		
 			}
 			if( dxpolN == 3 ){
-				tf1_dx_pol = new TF1("tf1_dx_pol", fitPol3, dx_min_x, dx_max_x, 4);			
+				tf1_dx_pol = new TF1("tf1_dx_pol", fitPol3, dx_min_x, dx_max_x, 4);		
 			}
 
 			tf1_dx_pol->SetNpx(dx_nbins);
@@ -1847,8 +1940,8 @@ void det_eff_v2(){
 
 		//Now lets get the "signal" Gaussian by subracting the polN BG histogram from h_dx_in
 		//We base this off of the gaussian determined from the full fit 
-			dx_gaus_min_x = dx_gaus_mean - dy_sig_multiplier*fabs(dx_gaus_sigma);
-			dx_gaus_max_x = dx_gaus_mean + dy_sig_multiplier*fabs(dx_gaus_sigma);
+			dx_gaus_min_x = dx_gaus_mean - dx_sig_multiplier*fabs(dx_gaus_sigma);
+			dx_gaus_max_x = dx_gaus_mean + dx_sig_multiplier*fabs(dx_gaus_sigma);
 
 			dx_gaus_min_bin = h_dx_in->GetXaxis()->FindBin(dx_gaus_min_x);
 			dx_gaus_max_bin = h_dx_in->GetXaxis()->FindBin(dx_gaus_max_x);
@@ -1893,7 +1986,7 @@ void det_eff_v2(){
 			tl_dx->Draw("same");
 
 			TPaveText *tp_dx = new TPaveText(0.15, 0.55, 0.45, 0.69, "NDCbr");
-			tp_dx->AddText(Form("dx count = %i +/- %i", int(h_dx_sig_from_sub->Integral()), int(dx_gaus_integral_error) ));
+			tp_dx->AddText(Form("dx count = %i +/- %i", int(h_dx_sig_from_sub->Integral()), int(dx_bgSub_gaus_integral_error) ));
 			tp_dx->AddText(Form("Total fit #chi^{2} = %.1f", tf1_dx_fullFit->GetChisquare()));
 			tp_dx->Draw("same");
 
@@ -1909,7 +2002,10 @@ void det_eff_v2(){
 			//Only including error from ratio for efficiency  W2_gaus_integral_error
 			// det_eff_total_error = det_eff_FINAL*sqrt( pow( W2_gaus_integral_error/W2_gaus_integral, 2) + pow( dx_bgSub_gaus_integral_error/dx_gaus_integral, 2) );
 
-			det_eff_total_error = det_eff_FINAL*sqrt( 100.0*(pow( (dx_gaus_integral_error/dx_gaus_integral), 2) + pow( (W2_sig_from_sub_integral_error/W2_sig_from_sub_integral) , 2) ));
+			//OLD
+			// det_eff_total_error = det_eff_FINAL*sqrt( 100.0*(pow( (dx_gaus_integral_error/dx_gaus_integral), 2) + pow( (W2_sig_from_sub_integral_error/W2_sig_from_sub_integral) , 2) ));
+			//NEW
+			det_eff_total_error = det_eff_FINAL*sqrt( 100.0*(pow( (dx_bgSub_gaus_integral_error/dx_gaus_integral), 2) + pow( (W2_sig_from_sub_integral_error/W2_sig_from_sub_integral) , 2) ));
 
 			//calculated with sqrt(N)
 			double sqrt_N_err = det_eff_FINAL*sqrt( 100.0*(pow( sqrt(dx_gaus_integral)/dx_gaus_integral, 2 ) + pow( sqrt(W2_gaus_integral)/W2_gaus_integral, 2) ));
@@ -1922,16 +2018,20 @@ void det_eff_v2(){
 			cout << "BG integral: " << dx_pol_integral << endl;
 			cout << "---" << endl;
 			cout << "dx gaus fit integral: " << tf1_dx_gaus->Integral(dx_min_x, dx_max_x)/tf1_dx_gaus->GetHistogram()->GetBinWidth(1) << endl;
-			cout << "dx gaus integral from function: " << gaus_integral(dx_gaus_norm, dx_gaus_sigma, h_dx_in->GetBinWidth(1)) << endl << endl;
+			// cout << "dx gaus integral from function: " << gaus_integral(dx_gaus_norm, dx_gaus_sigma, h_dx_in->GetBinWidth(1)) << endl << endl;
 			cout << "-------------------------------" << endl;
-			cout << "dx signal integral: " << dx_gaus_integral << " +/- " << dx_gaus_integral_error << endl;
+			// cout << "dx signal integral: " << dx_gaus_integral << " +/- " << dx_gaus_integral_error << endl;
+			cout << "dx signal integral: " << dx_gaus_integral << " +/- " << dx_bgSub_gaus_integral_error << endl;
 			cout << "---" << endl;
 			cout << "W2 signal integral: " << W2_sig_from_sub_integral << " +/- " << W2_sig_from_sub_integral_error << endl;
 			cout << "-------------------------------" << endl;
 			// cout << "HCal Detector Efficiency = " << det_eff_FINAL << "% +/- " << det_eff_total_error << "% " << endl << endl;
-			
+	
+			defficiency = 100.0*sqrt( fabs(det_eff_FINAL*( 100.0 - det_eff_FINAL )/(1.0*dx_gaus_integral)));
+			cout << "defficiency: " << defficiency << endl;
+
 			//Calculated with sqrt(N)
-			cout << "HCal Detector Efficiency = " << det_eff_FINAL << "% +/- " << sqrt_N_err << "% " << endl << endl;
+			cout << "HCal Detector Efficiency = " << det_eff_FINAL << "% +/- " << det_eff_total_error << "% " << endl << endl;
 			cout << "---" << endl;
 
 
@@ -1974,8 +2074,8 @@ void det_eff_v2(){
 		}
 	}
 
-		auto total_time_end = high_resolution_clock::now();
-		auto total_time_duration = duration_cast<minutes>(total_time_end - total_time_start);
+		auto total_time_end = chrono::high_resolution_clock::now();
+		auto total_time_duration = chrono::duration_cast<chrono::minutes>(total_time_end - total_time_start);
 		cout << endl << "---------------------------------------------------" << endl;
 		cout << "Total time for analysis: " << total_time_duration.count() << " minutes. " << endl;
 		cout << endl << "Outfile: " << outfile_name.Data() << endl;
