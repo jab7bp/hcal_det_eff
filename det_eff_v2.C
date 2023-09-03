@@ -47,8 +47,8 @@ int interpolN = 99;
 int dypolN, dxpolN;
 bool use_parsed = true;
 
-double dx_sig_multiplier = 2.75; //SBS4: 3.5
-double dy_sig_multiplier = 2.5; //SBD4: 2.5
+double dx_sig_multiplier = 3.5; //SBS4: 3.5 SBS8: 2.75
+double dy_sig_multiplier = 2.5; //SBS4: 2.5 SBS8: 2.5
 double W2_sig_multiplier = 4.0;
 
 double dx_bin_factor = 200.0;
@@ -73,7 +73,7 @@ double W2_fullScale_min_x = 0.0;
 double W2_fullScale_max_x = 3;
 int W2_fullScale_nbins = int(W2_bin_factor*(W2_fullScale_max_x - W2_fullScale_min_x));
 double W2_min_x = 0.0;
-double W2_max_x = 1.5; //SBS4 1.4, SBS8, 1.2
+double W2_max_x = 1.4; //SBS4 1.4, SBS8, 1.5 maybe 1.2?
 int W2_nbins = int(W2_bin_factor*(W2_max_x - W2_min_x));
 
 double reject_min;
