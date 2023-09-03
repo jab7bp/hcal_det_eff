@@ -287,7 +287,7 @@ Double_t nblk, nclus, SH_nclus, PS_nclus, hcal_x, hcal_y, hcal_e;
 Double_t hcal_clus_e[max_clus], hcal_clus_x[max_clus], hcal_clus_y[max_clus], hcal_clus_atime[max_clus], hcal_clus_tdctime[max_clus];
 Double_t dx_bestcluster, dy_bestcluster, HCal_ADC_time_bestcluster;
 Double_t dx_cluster_final, dy_cluster_final, HCal_ADC_time_final;
-Double_t hcal_clus_id;
+Double_t hcal_clus_id, hcal_clus_nblk;
 
 Double_t par[14], parRej[14], parRejSave[14], parDY[14], parAntiCut[14];
 
@@ -602,6 +602,7 @@ void det_eff_v2(){
 		TC->SetBranchStatus( "sbs.hcal.clus.atime", 1);
 		TC->SetBranchStatus( "sbs.hcal.clus.tdctime", 1);
 		TC->SetBranchStatus( "sbs.hcal.clus.id", 1);
+		TC->SetBranchStatus( "sbs.hcal.clus.nblk", 1);
 
 		// BB track
 		TC->SetBranchStatus( "bb.tr.chi2", 1 );
@@ -665,6 +666,7 @@ void det_eff_v2(){
 		TC->SetBranchAddress( "sbs.hcal.clus.atime", &hcal_clus_atime);
 		TC->SetBranchAddress( "sbs.hcal.clus.tdctime", &hcal_clus_tdctime);
 		TC->SetBranchAddress( "sbs.hcal.clus.id", &hcal_clus_id);
+		TC->SetBranchAddress( "sbs.hcal.clus.nblk", &hcal_clus_nblk);
 
 		// BB track
 		TC->SetBranchAddress( "bb.tr.chi2", bb_tr_chi2 );
@@ -1112,8 +1114,7 @@ void det_eff_v2(){
 
 			Double_t clus_sel_theta_pq;
 
-
-			for( Int_t clus_sel = 0; clus_sel < hcal_clus_id; clus_sel++){
+			for( Int_t clus_sel = 0; clus_sel < nclus; clus_sel++){
 				Double_t clus_sel_dx = hcal_clus_x[clus_sel] - x_expected_HCal;
 				Double_t clus_sel_dy = hcal_clus_y[clus_sel] - y_expected_HCal;
 
