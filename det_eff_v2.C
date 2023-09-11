@@ -14,6 +14,7 @@
 #include "/w/halla-scshelf2102/sbs/jboyd/include/GEM_lookups.h"
 #include "/w/halla-scshelf2102/sbs/jboyd/include/beam_variables.h"
 #include "/w/halla-scshelf2102/sbs/jboyd/include/calc_functions.h"
+#include "/w/halla-scshelf2102/sbs/jboyd/include/utility_functions.h"
 
 double W2_fullFit_par[14], W2_fullFit_par_errors[14], W2_bgSub_polN_par[9], dx_fullFit_par[14], dx_fullFit_par_errors[14], dy_fullFit_par[7];
 double W2_bg_reject_par[5];
@@ -92,15 +93,31 @@ bool acceptance_match = true;
 //hcal_cluster_minimize
 //Which method to use for "Best cluster selection"
 //Choices are: "coin_time", "theta_pq", "dxdy"
-TString hcal_cluster_minimize = "dxdy";
+TString hcal_cluster_minimize = "theta_pq";
 
 TString hcal_cluster_PID = "proton";
 bool use_hcal_cluster_PID = false;
 int hcal_cluster_PID_particle = 0; //0: None, 1: Proton, 2: Neutron;
 bool PID_clus_match_bool = false;
 
-bool use_best_cluster = false;
-bool theta_pq_cut = false;
+bool sort_hcal_cluster_energy = true;
+bool use_best_cluster = true;
+bool use_scoring = true;
+int num_best_cluster_types = 1;
+//Choose the best cluster type to prioritize:
+// 1 --> Highest energy cluster
+// 2 --> Cluster to minimize "dx"
+// 3 --> Cluster to minimize ADC time different
+
+int priority_best_cluster_type = 3;
+bool theta_pq_cut = true;
+
+//best cluster counters:
+int e_clus_in_match = 0, ADC_clus_in_match = 0, dx_clus_in_match = 0;
+int num_score_0 = 0, num_score_1 = 0, num_score_2 = 0;
+int e_ADC_clus_match = 0, e_dx_clus_match = 0, ADC_dx_clus_match = 0;
+int e_clus_selections = 0, ADC_clus_selections = 0, dx_clus_selections = 0;
+int total_clusters_selected = 0;
 
 bool plot_dxdy = true;
 bool plot_dxdy_anticut = true;
@@ -285,6 +302,12 @@ int useAlshield = 0;
 Double_t atime[kNcell], row[kNcell], col[kNcell], tdctime[kNcell], cblkid[kNcell], cblke[kNcell];
 Double_t nblk, nclus, SH_nclus, PS_nclus, hcal_x, hcal_y, hcal_e;
 Double_t hcal_clus_e[max_clus], hcal_clus_x[max_clus], hcal_clus_y[max_clus], hcal_clus_atime[max_clus], hcal_clus_tdctime[max_clus];
+Array1DValueWithIndex hcal_clus_e_sorted[maxTracks];
+// Array1DScoredWithIndex hcal_clus_scored[maxTracks];
+vector<vector<int>> hcal_clus_scored;
+//{ SCORE, HIGHEST_E_CLUS_INDEX, BEST_TIMING_INDEX, BEST_DXDY_INDEX, BEST_THETA_PQ_INDEX}
+vector<int> hcal_clus_row = {0, -1, -1, -1, -1};
+
 Double_t dx_bestcluster, dy_bestcluster, HCal_ADC_time_bestcluster;
 Double_t dx_cluster_final, dy_cluster_final, HCal_ADC_time_final;
 Double_t hcal_clus_id, hcal_clus_nblk;
@@ -302,7 +325,7 @@ double bb_tr_n, bb_ps_x, bb_ps_y, bb_ps_e, bb_sh_x, bb_sh_y, bb_sh_e;
 double bb_ntracks[maxTracks], bb_nhits[maxTracks];
 
 Double_t TDCT_id[kNtdc], TDCT_tdc[kNtdc], hodo_tmean[kNtdc]; 
-Int_t TDCTndata;
+Int_t TDCTndata, Nhcal_clus_id;
 
 Long64_t nTCevents, Nevents;
 
@@ -341,6 +364,10 @@ int polNfit, interpolNfit;
 int min_max_iter_cnt;
 int hcal_missed_cnt = 0;
 int hcal_hit_cnt = 0;
+int Nclusters = 0;
+
+int badHcalESort = 0, badHcalEsortElastics = 0, numScore3 = 0, clusterWithScore3 = -1;
+bool foundclusterWithScore3 = false;
 
 double defficiency;
 
@@ -476,7 +503,7 @@ void det_eff_v2(){
 	TString W2_sig_mult_str = Form("%.1f", W2_sig_multiplier);
 	W2_sig_mult_str.ReplaceAll(".", "_");
 	
-	outfile_name = Form("rootfiles/det_eff_histos_SBS%i_%s_mag%i_bgSub_W2BinFactor%i_dxBinFactor%i_dySigMult%s_w2SigMult%s.root", kine, run_target.Data(), sbsfieldscale, int(W2_bin_factor), int(dx_bin_factor), dy_sig_mult_str.Data(), W2_sig_mult_str.Data());
+	outfile_name = Form("rootfiles/det_eff_histos_SBS%i_%s_mag%i_bgSub_W2BinFactor%i_dxBinFactor%i_dySigMult%s_w2SigMult%s_scoreTest_%i.root", kine, run_target.Data(), sbsfieldscale, int(W2_bin_factor), int(dx_bin_factor), dy_sig_mult_str.Data(), W2_sig_mult_str.Data(), priority_best_cluster_type);
 
 	cout << "Outfile name: " << outfile_name.Data() << endl;
 
@@ -635,6 +662,7 @@ void det_eff_v2(){
 		TC->SetBranchStatus( "bb.sh.y", 1 );
 		TC->SetBranchStatus( "bb.sh.nclus", 1 );
 		TC->SetBranchStatus( "bb.ps.nclus", 1 );
+		TC->SetBranchStatus( "Ndata.sbs.hcal.clus.id", 1 );
 
 		// Trigger TDC
 		TC->SetBranchStatus( "bb.tdctrig.tdc", 1 );
@@ -658,6 +686,7 @@ void det_eff_v2(){
 		TC->SetBranchAddress( "sbs.hcal.e", &hcal_e );
 		TC->SetBranchAddress( "sbs.hcal.nclus", &nclus );
 		TC->SetBranchAddress( "sbs.hcal.clus_blk.atime", &hcal_clusblk_ADC_time );
+		TC->SetBranchAddress( "Ndata.sbs.hcal.clus.id", &Nhcal_clus_id );
 
 		// HCal Cluster Tree Variables
 		TC->SetBranchAddress( "sbs.hcal.clus.e", &hcal_clus_e);
@@ -705,7 +734,6 @@ void det_eff_v2(){
 		TC->SetBranchAddress( "Ndata.bb.tdctrig.tdcelemID", &TDCTndata );
 		cout << " done. " << endl;
 		cout << "--------------------------------------" << endl;
-
 
 		if( use_bbcal_cuts ){
 			cout << "*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-" << endl;
@@ -870,6 +898,20 @@ void det_eff_v2(){
 		for(Long64_t nevent = 0; nevent < Nevents; nevent++){
 			TC->GetEntry( ev_list->GetEntry( nevent ));
 
+			if( sort_hcal_cluster_energy ){
+			//SORT THE HCAL CLUSTER ENERGY ARRAY BY DESCENDING ORDER
+				for(int clus = 0; clus < max_clus; clus++){
+					hcal_clus_e_sorted[clus].ArrayValue = hcal_clus_e[clus];
+					hcal_clus_e_sorted[clus].index = clus;
+				}
+
+				sort( hcal_clus_e_sorted, hcal_clus_e_sorted + max_clus, CompareArrayValueWithIndex );
+
+				hcal_x = hcal_clus_x[hcal_clus_e_sorted[0].index];
+				hcal_y = hcal_clus_y[hcal_clus_e_sorted[0].index];			
+			}
+
+
 			if( nevent%five_percent == 0){		
 				StopWatch->Stop();
 
@@ -895,6 +937,7 @@ void det_eff_v2(){
 
 		//Timing stuff
 			h_hcal_clusblk_ADC_time->Fill(hcal_clusblk_ADC_time[0]);
+
 
 			// bool b_hcal_clusblk_ADC_cut = false;
 
@@ -1114,7 +1157,12 @@ void det_eff_v2(){
 
 			Double_t clus_sel_theta_pq;
 
-			for( Int_t clus_sel = 0; clus_sel < nclus; clus_sel++){
+			//Add number of elastic clusters to: Nclusters
+			Nclusters+=Nhcal_clus_id;
+			// cout << "Nhcal_clus_id to search through: " << Nhcal_clus_id << endl;
+
+			for( Int_t clus_sel = 0; clus_sel < Nhcal_clus_id; clus_sel++){
+			// for( Int_t clus_sel = 0; clus_sel < nclus; clus_sel++){
 				Double_t clus_sel_dx = hcal_clus_x[clus_sel] - x_expected_HCal;
 				Double_t clus_sel_dy = hcal_clus_y[clus_sel] - y_expected_HCal;
 
@@ -1193,7 +1241,6 @@ void det_eff_v2(){
 			}
 
 		//Now we can apply this and use it to select "best clusters" to use:
-
 			if( hcal_cluster_minimize == "coin_time" || ( PID_clus_match_bool ) ){
 				dx_bestcluster = hcal_clus_x[clus_sel_dx_atime] - x_expected_HCal;
 				dy_bestcluster = hcal_clus_y[clus_sel_dx_atime] - y_expected_HCal;
@@ -1210,14 +1257,52 @@ void det_eff_v2(){
 				HCal_ADC_time_bestcluster = hcal_clus_atime[clus_sel_dx_dxdy];				
 			}
 
+
+			//Count bad hcal clus e sorts:
+			if( FindIndexOfMaxElement( hcal_clus_e, max_clus ) != 0 ){
+				badHcalESort++;
+			}
+	//////////////////////////////////////
+	//////////////////////////////////////
+		//Start of best cluster scoring
+			hcal_clus_scored.push_back(hcal_clus_row);
+
+			// //DECLARE CLUSTER VALUE INFO IN THE SCORED ARRAY:
+			//Index 0 is the score of the cluster:
+			//[0] = 2 --> Three matching clusters
+			//[0] = 1 --> Two matching clusters
+			//[0] = 0 --> All clusters are different
+			
+			hcal_clus_scored[nevent][1] = FindIndexOfMaxElement( hcal_clus_e, max_clus );
+			hcal_clus_scored[nevent][2] = clus_sel_dx_dxdy;
+			hcal_clus_scored[nevent][3] = clus_sel_dx_atime;
+
+		//CASES FOR VARIETIES OF MATCHES ON THE INDICES. 
+		//------------------------------------
+		//Loop through the hcal_cluse_scored array and count the matches
+			int maxMatchCount = 0;
+			int currentMatchCount = 0;
+			for( int i = 1; i <= num_best_cluster_types; i ++ ){
+				// Reset the current matching count for each new index
+				currentMatchCount = 0;
+
+				// Compare the element at the current index with elements at indices [1] through [last]
+				for( int j = 1; j <= num_best_cluster_types; j++ ){
+					if( (hcal_clus_scored[nevent][i] == hcal_clus_scored[nevent][j]) && (i != j) ){
+						currentMatchCount++;
+					}
+				}
+				// Update the maximum matching count if necessary
+		        if (currentMatchCount > maxMatchCount) {
+		            maxMatchCount = currentMatchCount; 
+		        }
+			}
+
+		//Put the maximum number of matches into element [0]
+			//minimum number of matches should be 0 and max should be num_best_cluster_types - 1.
+			hcal_clus_scored[nevent][0] = maxMatchCount; 
+
 // --------------------------------------
-
-			// cout << "Proton_Direction: " << Proton_Direction.X() << ", "<< Proton_Direction.Y() << ", "<< Proton_Direction.Z() << ", " << endl;
-			// cout << "Neutron_Direction: " << Neutron_Direction.X() << ", "<< Neutron_Direction.Y() << ", "<< Neutron_Direction.Z() << ", " << endl;
-			// cout << "pNhat: " << pNhat.X() << ", " << pNhat.Y() << ", " << pNhat.Z() << endl;
-
-			// h_theta_pq_n_pNhat->Fill(thetapq_n);
-			// h_theta_pq_p_pNhat->Fill(thetapq_p);
 
 		//---------------------------
 			if( theta_pq_cut ){
@@ -1275,12 +1360,12 @@ void det_eff_v2(){
 			bool det_eff_cut;
 
 			if( kine == 4 ){
-				det_eff_cut =  	bb_tgt_th[0]>-0.2 && 
+				det_eff_cut =  	
 								hit_on_HCal && 
 								SH_nclus>0 && 
 								PS_nclus>0 && (abs(bb_tr_vz[0])<=0.075) 
 								&& (bb_ps_e>0.150) 
-								&& (bb_nhits[0]>4) 
+								&& (bb_nhits[0]>3) 
 								&& (bb_tr_n==1);				
 			}
 
@@ -1290,7 +1375,7 @@ void det_eff_v2(){
 								hit_on_HCal && 
 								SH_nclus>0 && 
 								PS_nclus>0 && (abs(bb_tr_vz[0])<=0.075) 
-								&& (bb_ps_e>0.180) 
+								&& (bb_ps_e>0.150) 
 								&& (bb_nhits[0]>4) 
 								&& (bb_tr_n==1);
 			}
@@ -1320,6 +1405,114 @@ void det_eff_v2(){
 					dy = hcal_y - y_expected_HCal;				
 				}
 
+			//If using the scoring method for best cluster we need to sort through the scores and matches and pick a best cluster
+			//This is all based on the original priority_best_cluster.
+			//I think we should work chronogically from score 0 to score 3
+				if( use_scoring ){
+					// cout << "Using score3 cluster " << numScore3 << endl;
+
+				//CASE 1: No matches. If no elements match we should default to the priority_best_cluster_type selection	
+					if( hcal_clus_scored[nevent][0] == 0 ){
+						dx = hcal_clus_x[hcal_clus_scored[nevent][priority_best_cluster_type]] - x_expected_HCal;
+						dy = hcal_clus_y[hcal_clus_scored[nevent][priority_best_cluster_type]] - y_expected_HCal;
+
+						num_score_0++;
+						if( priority_best_cluster_type == 1 ){e_clus_selections++;}
+						if( priority_best_cluster_type == 2 ){dx_clus_selections++;}
+						if( priority_best_cluster_type == 3 ){ADC_clus_selections++;}
+						total_clusters_selected++;
+					}
+
+			//These next cases is a bit more interesting. We want to look and see if the priority_best_cluster_type is part of a match.
+			//IF THE priority_best_cluster_type IS NOT PART OF THE MAX MATCH THEN WE DON'T WANT IT. 
+			//IF THE priority_best_cluster_type IS PART OF THE MAX MATCH THEN WE USE IT. 
+					
+				//CASE 2: ONE MATCHING PAIR
+					if( hcal_clus_scored[nevent][0] == 1 ){
+						bool priority_in_match = false;
+						vector<int> matching_indices = {};
+						//Lets default the cluster choice to the originally chosen priority_best_cluster_type
+						int one_match_best_cluster = priority_best_cluster_type;
+
+						for( int i = 1; i <= num_best_cluster_types; i++ ){
+							if( (hcal_clus_scored[nevent][i] == hcal_clus_scored[nevent][priority_best_cluster_type]) && (i !=  priority_best_cluster_type) ){
+								priority_in_match = true;
+								//Priority cluster is in a match so we will pick it!
+							}
+							//NOW, the priority cluster is not part of a match so.... we pick the second best option. 
+							//Sort through and find the indices of the matching pair
+							matching_indices = {};
+							for( int j = 1; j <= num_best_cluster_types; j++ ){
+								if( hcal_clus_scored[nevent][i] == hcal_clus_scored[nevent][j] && (i != j) ){
+									matching_indices.push_back(i);
+								}
+							}
+							
+							//Counting stuff for metrics
+							if( (hcal_clus_scored[nevent][i] == hcal_clus_scored[nevent][1]) && (i !=  1) ){
+								e_clus_in_match++;
+							}
+							if( (hcal_clus_scored[nevent][i] == hcal_clus_scored[nevent][2]) && (i !=  2) ){
+								dx_clus_in_match++;
+							}
+							if( (hcal_clus_scored[nevent][i] == hcal_clus_scored[nevent][3]) && (i !=  3) ){
+								ADC_clus_in_match++;
+							}
+
+						}
+						//Counting stuff for metrics
+						if( (hcal_clus_scored[nevent][1]) == hcal_clus_scored[nevent][2] ){
+							e_dx_clus_match++;
+						}
+						if( (hcal_clus_scored[nevent][1]) == hcal_clus_scored[nevent][3] ){
+							e_ADC_clus_match++;
+						}
+						if( (hcal_clus_scored[nevent][2]) == hcal_clus_scored[nevent][3] ){
+							ADC_dx_clus_match++;
+						}
+						total_clusters_selected++;
+
+						if( !priority_in_match ){
+							//These are ordered by importance. So, matching_indices[0] will be the next best choice after the priority_best_cluster_type
+							one_match_best_cluster = matching_indices[0];
+						}
+						if( priority_in_match ){
+							one_match_best_cluster = priority_best_cluster_type; //A Bit redundant but that's fine
+						}
+					//The best cluster should have been sorted out by now. 
+						dx = hcal_clus_x[hcal_clus_scored[nevent][one_match_best_cluster]] - x_expected_HCal;
+						dy = hcal_clus_y[hcal_clus_scored[nevent][one_match_best_cluster]] - y_expected_HCal;						
+
+						num_score_1++;
+
+						if( one_match_best_cluster == 1 ){e_clus_selections++;}
+						if( one_match_best_cluster == 2 ){dx_clus_selections++;}
+						if( one_match_best_cluster == 3 ){ADC_clus_selections++;}
+					}
+
+				//CASE 3: All element match: Select index of priority_best_cluster_type. Doesn't matter, but let us be diligent and select it. 
+					if( hcal_clus_scored[nevent][0] == 2 ){
+						dx = hcal_clus_x[hcal_clus_scored[nevent][priority_best_cluster_type]] - x_expected_HCal;
+						dy = hcal_clus_y[hcal_clus_scored[nevent][priority_best_cluster_type]] - y_expected_HCal;
+
+						//Counting stuff for metrics
+						num_score_2++;
+						e_clus_in_match++;
+						ADC_clus_in_match++;
+						dx_clus_in_match++;
+						e_ADC_clus_match++;
+						e_dx_clus_match++;
+						ADC_dx_clus_match++;
+						total_clusters_selected++;
+
+						if( priority_best_cluster_type == 1 ){e_clus_selections++;}
+						if( priority_best_cluster_type == 2 ){dx_clus_selections++;}
+						if( priority_best_cluster_type == 3 ){ADC_clus_selections++;}
+					}
+
+					// dx = dx_bestcluster;
+					// dy = dy_bestcluster;					
+				}
 				//Resolve the hadron spots without cuts
 				h_dx->Fill( dx );
 				h_dy->Fill( dy );
@@ -1465,6 +1658,11 @@ void det_eff_v2(){
 							}
 
 							elastic_yield++;
+
+							//count bad hcal clus e sorts for elastics:
+							if( FindIndexOfMaxElement( hcal_clus_e, max_clus ) != 0 ){
+								badHcalEsortElastics++;
+							}
 						}
 					}
 			//----------proton
@@ -1501,6 +1699,12 @@ void det_eff_v2(){
 							}
 
 							elastic_yield++;
+							
+							//count bad hcal clus e sorts for elastics:
+							if( FindIndexOfMaxElement( hcal_clus_e, max_clus ) != 0 ){
+								badHcalEsortElastics++;
+							}
+
 						}
 					}
 				}
@@ -1508,11 +1712,21 @@ void det_eff_v2(){
 				//Still should count elastic yields if we got this far.....
 				if( !fiducial_cut ){
 					elastic_yield++;
+
+					//count bad hcal clus e sorts for elastics:
+					if( FindIndexOfMaxElement( hcal_clus_e, max_clus ) != 0 ){
+						badHcalEsortElastics++;
+					}
 				}
 			}
 
 			if( calc_W_only ){
 				elastic_yield++;
+
+				//count bad hcal clus e sorts for elastics:
+				if( FindIndexOfMaxElement( hcal_clus_e, max_clus ) != 0 ){
+					badHcalEsortElastics++;
+				}
 			}
 	//END OF ENTRY LOOP
 		}	
